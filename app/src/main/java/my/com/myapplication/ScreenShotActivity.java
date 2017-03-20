@@ -15,13 +15,12 @@ import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.support.annotation.RequiresApi;
-import android.support.v7.app.AppCompatActivity;
 import android.util.DisplayMetrics;
 import android.util.Log;
-import android.view.View;
 import android.view.WindowManager;
 import android.widget.Toast;
 
@@ -37,21 +36,23 @@ import java.util.List;
  * Created by Administrator on 2017/3/8.
  */
 
-public class ScreenShotActivity extends AppCompatActivity {
+public class ScreenShotActivity extends Activity {
     MediaProjectionManager mediaProjectionManager;
     MediaProjection mediaProjection;
     ImageReader mImageReader;
     VirtualDisplay virtualDisplay1;
     DisplayMetrics displayMetrics;
     WindowManager windowManager;
-    Boolean screenState = false;
-    View view = this.getWindow().getDecorView().getRootView();
+    String name, path;
 
-    public void createScreenShot() {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        Intent intent = getIntent();
+        name = intent.getStringExtra("name");
+        path = intent.getStringExtra("path");
         checkPermission();
-        requestCapturePermission();
     }
-
     public void requestCapturePermission() {
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
@@ -77,12 +78,15 @@ public class ScreenShotActivity extends AppCompatActivity {
     public void checkPermission() {
         final List<String> permissionsList = new ArrayList<>();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if ((checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED))
+            if ((checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)) {
                 permissionsList.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+            } else {
+                requestCapturePermission();
+            }
+
             if (permissionsList.size() != 0) {
                 requestPermissions(permissionsList.toArray(new String[permissionsList.size()]),
                         100);
-            } else {
             }
         }
     }
@@ -91,7 +95,10 @@ public class ScreenShotActivity extends AppCompatActivity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         if (requestCode == 100) {
-            if (grantResults.length > 0 && (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) && (checkSelfPermission(Manifest.permission.SYSTEM_ALERT_WINDOW) == PackageManager.PERMISSION_GRANTED)) {
+            if (grantResults.length > 0 && (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED)) {
+                requestCapturePermission();
+            } else {
+                Toast.makeText(ScreenShotActivity.this, "未获取权限", Toast.LENGTH_SHORT).show();
             }
         }///instant-run
     }
@@ -100,9 +107,10 @@ public class ScreenShotActivity extends AppCompatActivity {
         displayMetrics = new DisplayMetrics();
         windowManager = (WindowManager) this.getSystemService(WINDOW_SERVICE);
         windowManager.getDefaultDisplay().getMetrics(displayMetrics);
-        mImageReader = ImageReader.newInstance(view.getWidth(), view.getHeight(), PixelFormat.RGBA_8888, 2);
-        virtualDisplay1 = mediaProjection.createVirtualDisplay("screen-mirror", view.getWidth(), view.getHeight(), displayMetrics.densityDpi, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, mImageReader.getSurface(), null, null);
-        mediaProjectionManager = (MediaProjectionManager) this.getSystemService(MEDIA_PROJECTION_SERVICE);
+        int width = displayMetrics.widthPixels;
+        int height = displayMetrics.heightPixels;
+        mImageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
+        virtualDisplay1 = mediaProjection.createVirtualDisplay("screen-mirror", width, height, displayMetrics.densityDpi, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, mImageReader.getSurface(), null, null);
         Handler handler = new Handler();
         handler.postDelayed(new Runnable() {
             @Override
@@ -118,35 +126,45 @@ public class ScreenShotActivity extends AppCompatActivity {
                     int rowPadding = rowStride - pixelStride * width;
                     Bitmap bmp = Bitmap.createBitmap(width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888);
                     bmp.copyPixelsFromBuffer(buffer);
-                    Bitmap bitmap = Bitmap.createScaledBitmap(bmp, bmp.getWidth() / 2, bmp.getHeight() / 2, false);
+                    Bitmap bitmap = Bitmap.createScaledBitmap(bmp, bmp.getWidth(), bmp.getHeight(), false);
+                    if(bitmap!=null){
+                        long spendtimes = System.currentTimeMillis() - MyApplication.time;
+                        Toast.makeText(ScreenShotActivity.this, "bitmap成功时间" + spendtimes, Toast.LENGTH_SHORT).show();
+                    }
                     setSavePic(bitmap);
                     bitmap.recycle();
                     image.close();
-                } else {
-                    Log.e("Tag", "captureScreen: " + " image为空");
                 }
             }
-        }, 100);
+        }, 10);
     }
 
     private void setSavePic(Bitmap bitmap) {//保存截屏到本地
         if (Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
-            String path = Environment.getExternalStorageDirectory().getPath() + "/截屏";
+            if (path == null) {
+                path = Environment.getExternalStorageDirectory().getPath() + "/截屏";
+            } else {
+                path = Environment.getExternalStorageDirectory().getPath() + "/" + path;
+            }
             File file = new File(path);
             if (!file.exists()) {
                 file.mkdir();
             }
-            File file1 = new File(file, System.currentTimeMillis() + ".jpg");
+            if (name == null) {
+                name = System.currentTimeMillis() + "";
+            }
+            File file1 = new File(file, name + ".jpg");
             try {
                 FileOutputStream fileOutputStream = new FileOutputStream(file1);
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fileOutputStream);
                 fileOutputStream.flush();
                 fileOutputStream.close();
-                Toast.makeText(this, "截屏已保存到本地" + path, Toast.LENGTH_SHORT).show();
+//                Toast.makeText(this, "截屏已保存到本地" + path, Toast.LENGTH_SHORT).show();
                 Intent intent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
                 Uri uri = Uri.fromFile(file1);
                 intent.setData(uri);
                 sendBroadcast(intent);
+                finish();
             } catch (FileNotFoundException e) {
                 e.printStackTrace();
             } catch (IOException e) {
